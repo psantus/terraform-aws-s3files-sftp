@@ -1,39 +1,10 @@
 ###############################################################################
 # S3 Files SFTP — atmoz/sftp on Fargate backed by S3 via S3 Files
 #
-# S3 Files resources (file-system, mount-target) are managed through
-# terraform_data + AWS CLI because the Terraform provider does not yet
-# support the s3files service (PR #47325 pending).
-#
-# The ECS task definition is also registered via CLI because the provider's
-# aws_ecs_task_definition resource does not yet support
-# s3filesVolumeConfiguration.
+# The ECS task definition is registered via AWS CLI because the provider's
+# aws_ecs_task_definition does not yet support s3filesVolumeConfiguration.
+# All other resources use native Terraform.
 ###############################################################################
-
-locals {
-  sftp_bucket_name = "${var.project_name}-${var.env}-sftp"
-  fs_name          = "${var.project_name}-${var.env}-sftp"
-}
-
-# ─── S3 bucket for SFTP data ────────────────────────────────────────────────
-
-resource "aws_s3_bucket" "sftp" {
-  bucket = local.sftp_bucket_name
-  tags   = { Name = local.sftp_bucket_name }
-}
-
-resource "aws_s3_bucket_versioning" "sftp" {
-  bucket = aws_s3_bucket.sftp.id
-  versioning_configuration { status = "Enabled" } # Required by S3 Files
-}
-
-resource "aws_s3_bucket_public_access_block" "sftp" {
-  bucket                  = aws_s3_bucket.sftp.id
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
-}
 
 # ─── IAM role assumed by S3 Files to sync bucket ↔ file-system ──────────────
 
@@ -64,14 +35,14 @@ resource "aws_iam_role_policy" "s3files" {
         Sid      = "S3BucketPermissions"
         Effect   = "Allow"
         Action   = ["s3:ListBucket", "s3:ListBucketVersions"]
-        Resource = aws_s3_bucket.sftp.arn
+        Resource = var.s3_bucket_arn
         Condition = { StringEquals = { "aws:ResourceAccount" = data.aws_caller_identity.current.account_id } }
       },
       {
         Sid      = "S3ObjectPermissions"
         Effect   = "Allow"
         Action   = ["s3:AbortMultipartUpload", "s3:DeleteObject*", "s3:GetObject*", "s3:List*", "s3:PutObject*"]
-        Resource = "${aws_s3_bucket.sftp.arn}/*"
+        Resource = "${var.s3_bucket_arn}/*"
         Condition = { StringEquals = { "aws:ResourceAccount" = data.aws_caller_identity.current.account_id } }
       },
       {
@@ -133,9 +104,9 @@ resource "aws_security_group" "sftp_app" {
   }
 }
 
-resource "aws_security_group" "s3files_mt" {
-  name        = "${var.project_name}-s3files-mt"
-  description = "Allow NFS from ECS tasks to S3 Files mount targets"
+resource "aws_security_group" "nfs" {
+  name        = "${var.project_name}-nfs"
+  description = "Allow NFS from ECS tasks to S3 Files / EFS mount targets"
   vpc_id      = var.vpc_id
 
   ingress {
@@ -164,118 +135,22 @@ resource "aws_efs_mount_target" "ssh_host_keys" {
   for_each        = toset(var.private_subnet_ids)
   file_system_id  = aws_efs_file_system.ssh_host_keys.id
   subnet_id       = each.value
-  security_groups = [aws_security_group.s3files_mt.id] # reuses NFS 2049 SG
+  security_groups = [aws_security_group.nfs.id]
 }
 
-# ─── S3 Files file system (AWS CLI) ─────────────────────────────────────────
+# ─── S3 Files file system (native Terraform, provider >= 6.40) ──────────────
 
-resource "terraform_data" "s3files_file_system" {
-  input = {
-    bucket   = aws_s3_bucket.sftp.arn
-    role_arn = aws_iam_role.s3files.arn
-    region   = var.aws_region
-    fs_name  = local.fs_name
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      set -e
-      FS_OUTPUT=$(aws s3files create-file-system \
-        --bucket "${self.input.bucket}" \
-        --role-arn "${self.input.role_arn}" \
-        --tags key=Name,value=${self.input.fs_name} \
-        --accept-bucket-warning \
-        --region "${self.input.region}" \
-        --output json)
-
-      FS_ID=$(echo "$FS_OUTPUT" | jq -r '.fileSystemId')
-      echo "$FS_ID" > /tmp/s3files_fs_id_${self.input.fs_name}
-
-      for i in $(seq 1 60); do
-        STATUS=$(aws s3files get-file-system --file-system-id "$FS_ID" \
-          --region "${self.input.region}" --query 'status' --output text)
-        [ "$STATUS" = "available" ] && break
-        sleep 10
-      done
-    EOT
-  }
-
-  provisioner "local-exec" {
-    when    = destroy
-    command = <<-EOT
-      set -e
-      FS_ID=$(cat /tmp/s3files_fs_id_${self.input.fs_name} 2>/dev/null || true)
-      [ -z "$FS_ID" ] && exit 0
-
-      # Delete mount targets first
-      MTS=$(aws s3files list-mount-targets --file-system-id "$FS_ID" \
-        --region "${self.input.region}" --query 'mountTargets[].mountTargetId' --output text 2>/dev/null || true)
-      for MT in $MTS; do
-        aws s3files delete-mount-target --mount-target-id "$MT" --region "${self.input.region}" || true
-      done
-      sleep 30
-
-      aws s3files delete-file-system --file-system-id "$FS_ID" --region "${self.input.region}" || true
-      rm -f /tmp/s3files_fs_id_${self.input.fs_name}
-    EOT
-  }
+resource "aws_s3files_file_system" "sftp" {
+  bucket   = var.s3_bucket_arn
+  role_arn = aws_iam_role.s3files.arn
+  tags     = { Name = "${var.project_name}-${var.env}-sftp" }
 }
 
-data "local_file" "s3files_fs_id" {
-  filename   = "/tmp/s3files_fs_id_${local.fs_name}"
-  depends_on = [terraform_data.s3files_file_system]
-}
-
-locals {
-  s3files_fs_id  = trimspace(data.local_file.s3files_fs_id.content)
-  s3files_fs_arn = "arn:aws:s3files:${var.aws_region}:${data.aws_caller_identity.current.account_id}:file-system/${local.s3files_fs_id}"
-}
-
-# ─── S3 Files mount targets (AWS CLI) ───────────────────────────────────────
-
-resource "terraform_data" "s3files_mount_targets" {
-  for_each = toset(var.private_subnet_ids)
-
-  input = {
-    fs_id     = local.s3files_fs_id
-    subnet_id = each.value
-    sg_id     = aws_security_group.s3files_mt.id
-    region    = var.aws_region
-  }
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      set -e
-      MT_OUTPUT=$(aws s3files create-mount-target \
-        --file-system-id "${self.input.fs_id}" \
-        --subnet-id "${self.input.subnet_id}" \
-        --security-groups "${self.input.sg_id}" \
-        --region "${self.input.region}" \
-        --output json)
-
-      MT_ID=$(echo "$MT_OUTPUT" | jq -r '.mountTargetId')
-      echo "$MT_ID" > /tmp/s3files_mt_${self.input.subnet_id}
-
-      for i in $(seq 1 60); do
-        STATUS=$(aws s3files get-mount-target --mount-target-id "$MT_ID" \
-          --region "${self.input.region}" --query 'status' --output text)
-        [ "$STATUS" = "available" ] && break
-        sleep 10
-      done
-    EOT
-  }
-
-  provisioner "local-exec" {
-    when    = destroy
-    command = <<-EOT
-      MT_ID=$(cat /tmp/s3files_mt_${self.input.subnet_id} 2>/dev/null || true)
-      [ -z "$MT_ID" ] && exit 0
-      aws s3files delete-mount-target --mount-target-id "$MT_ID" --region "${self.input.region}" || true
-      rm -f /tmp/s3files_mt_${self.input.subnet_id}
-    EOT
-  }
-
-  depends_on = [terraform_data.s3files_file_system]
+resource "aws_s3files_mount_target" "sftp" {
+  for_each        = toset(var.private_subnet_ids)
+  file_system_id  = aws_s3files_file_system.sftp.id
+  subnet_id       = each.value
+  security_groups = [aws_security_group.nfs.id]
 }
 
 # ─── IAM: ECS task roles ────────────────────────────────────────────────────
@@ -330,13 +205,13 @@ resource "aws_iam_role_policy" "task_role_s3files" {
         Sid      = "S3ObjectReadAccess"
         Effect   = "Allow"
         Action   = ["s3:GetObject", "s3:GetObjectVersion"]
-        Resource = "${aws_s3_bucket.sftp.arn}/*"
+        Resource = "${var.s3_bucket_arn}/*"
       },
       {
         Sid      = "S3BucketListAccess"
         Effect   = "Allow"
         Action   = "s3:ListBucket"
-        Resource = aws_s3_bucket.sftp.arn
+        Resource = var.s3_bucket_arn
       },
       {
         Sid      = "ECSExec"
@@ -408,16 +283,20 @@ resource "aws_lb_listener" "sftp" {
 
 # ─── ECS task definition (AWS CLI — provider lacks s3filesVolumeConfiguration)
 
+locals {
+  task_family = "${var.project_name}-${var.env}-sftp"
+}
+
 resource "aws_cloudwatch_log_group" "sftp" {
-  name              = "/aws/ecs/${var.project_name}-${var.env}-sftp/sftp"
+  name              = "/aws/ecs/${local.task_family}/sftp"
   retention_in_days = var.logs_retention_in_days
 }
 
 resource "terraform_data" "ecs_task_definition" {
   input = {
-    family    = "${var.project_name}-${var.env}-sftp"
+    family    = local.task_family
     region    = var.aws_region
-    fs_arn    = local.s3files_fs_arn
+    fs_arn    = aws_s3files_file_system.sftp.arn
     efs_id    = aws_efs_file_system.ssh_host_keys.id
     exec_role = aws_iam_role.task_execution_role.arn
     task_role = aws_iam_role.task_role.arn
@@ -472,8 +351,10 @@ resource "terraform_data" "ecs_task_definition" {
             ],
             "mountPoints": [
               { "sourceVolume": "sftp-home", "containerPath": "/home", "readOnly": false },
-              { "sourceVolume": "ssh-host-keys", "containerPath": "/etc/ssh/", "readOnly": false }
+              { "sourceVolume": "ssh-host-keys", "containerPath": "/etc/ssh/host-keys", "readOnly": false }
             ],
+            "entryPoint": ["sh", "-c"],
+            "command": ["cp -n /etc/ssh/host-keys/ssh_host_*_key* /etc/ssh/ 2>/dev/null; /entrypoint sh -c 'cp -f /etc/ssh/ssh_host_*_key* /etc/ssh/host-keys/ 2>/dev/null; exec /usr/sbin/sshd -D -e'"],
             "secrets": [
               { "name": "SFTP_USERS", "valueFrom": "${self.input.ssm_arn}" }
             ],
@@ -496,37 +377,36 @@ resource "terraform_data" "ecs_task_definition" {
       }
 TASKDEF
 
-      TASK_OUTPUT=$(aws ecs register-task-definition \
+      aws ecs register-task-definition \
         --cli-input-json file:///tmp/taskdef_${self.input.family}.json \
-        --region "${self.input.region}" \
-        --output json)
+        --region "${self.input.region}" > /dev/null
 
-      TASK_ARN=$(echo "$TASK_OUTPUT" | jq -r '.taskDefinition.taskDefinitionArn')
-      echo "$TASK_ARN" > /tmp/taskdef_arn_${self.input.family}
+      rm -f /tmp/taskdef_${self.input.family}.json
     EOT
   }
 
   provisioner "local-exec" {
     when    = destroy
     command = <<-EOT
-      TASK_ARN=$(cat /tmp/taskdef_arn_${self.input.family} 2>/dev/null || true)
-      [ -z "$TASK_ARN" ] && exit 0
-      aws ecs deregister-task-definition --task-definition "$TASK_ARN" \
-        --region "${self.input.region}" || true
-      rm -f /tmp/taskdef_arn_${self.input.family} /tmp/taskdef_${self.input.family}.json
+      LATEST=$(aws ecs describe-task-definition --task-definition "${self.input.family}" \
+        --region "${self.input.region}" --query 'taskDefinition.taskDefinitionArn' --output text 2>/dev/null || true)
+      [ -z "$LATEST" ] && exit 0
+      aws ecs deregister-task-definition --task-definition "$LATEST" \
+        --region "${self.input.region}" > /dev/null 2>&1 || true
     EOT
   }
 
   depends_on = [
-    terraform_data.s3files_mount_targets,
+    aws_s3files_mount_target.sftp,
     aws_efs_mount_target.ssh_host_keys,
     aws_cloudwatch_log_group.sftp,
   ]
 }
 
-data "local_file" "taskdef_arn" {
-  filename   = "/tmp/taskdef_arn_${var.project_name}-${var.env}-sftp"
-  depends_on = [terraform_data.ecs_task_definition]
+# Look up the latest task definition revision (no temp files needed)
+data "aws_ecs_task_definition" "sftp" {
+  task_definition = local.task_family
+  depends_on      = [terraform_data.ecs_task_definition]
 }
 
 # ─── ECS Service ────────────────────────────────────────────────────────────
@@ -534,7 +414,7 @@ data "local_file" "taskdef_arn" {
 resource "aws_ecs_service" "sftp" {
   name            = "${var.project_name}-${var.env}-sftp"
   cluster         = module.ecs.cluster_arn
-  task_definition = trimspace(data.local_file.taskdef_arn.content)
+  task_definition = data.aws_ecs_task_definition.sftp.arn
   desired_count   = 1
   launch_type     = "FARGATE"
 

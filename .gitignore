@@ -1,6 +1,8 @@
 .idea/
 *.iml
-blog-s3files-sftp.md
+*.tfbackend
+providers.tf
+blog-s3files-sftp*.md
 *.png
 .terraform/
 .idea/

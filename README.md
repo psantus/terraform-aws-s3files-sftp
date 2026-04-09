@@ -18,14 +18,13 @@ flowchart LR
 
 ## Prerequisites
 
-- **AWS CLI v2.34.26+** — required for `aws s3files` commands. Update with `brew upgrade awscli` or see [install guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html).
-- **[jq](https://jqlang.github.io/jq/)** — used by provisioner scripts to parse AWS CLI JSON output.
-- **Terraform >= 1.5**
+- **AWS CLI v2.34.26+** — required for `aws ecs register-task-definition` with S3 Files volumes. Update with `brew upgrade awscli` or see [install guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html).
+- **Terraform >= 1.5** with **AWS provider >= 6.40** (first version with native S3 Files resources).
 - A VPC with public and private subnets.
 
-## Why not native Terraform?
+## Why not fully native Terraform?
 
-The Terraform AWS provider doesn't support `aws_s3files_file_system` yet ([PR #47325](https://github.com/hashicorp/terraform-provider-aws/pull/47325)). S3 Files resources and the ECS task definition (which needs `s3filesVolumeConfiguration`) are managed via `terraform_data` + AWS CLI provisioners. This module will be updated to use native resources once the provider ships support.
+S3 Files resources (`aws_s3files_file_system`, `aws_s3files_mount_target`) are managed natively since provider v6.40. However, the ECS task definition still requires AWS CLI because `aws_ecs_task_definition` does not yet support `s3filesVolumeConfiguration`. This module will be updated to be fully native once the provider adds that support.
 
 ## Usage
 
