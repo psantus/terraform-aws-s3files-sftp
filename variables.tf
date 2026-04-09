@@ -49,3 +49,9 @@ variable "sftp_dns_name" {
   type    = string
   default = ""
 }
+
+variable "allowed_cidr_blocks" {
+  description = "CIDR blocks allowed to connect to the SFTP endpoint"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
