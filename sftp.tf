@@ -388,6 +388,11 @@ resource "aws_lb_target_group" "sftp" {
   protocol    = "TCP"
   target_type = "ip"
   vpc_id      = var.vpc_id
+
+  stickiness {
+    enabled = true
+    type    = "source_ip"
+  }
 }
 
 resource "aws_lb_listener" "sftp" {
