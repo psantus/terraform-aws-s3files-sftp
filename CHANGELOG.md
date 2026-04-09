@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.0 (2026-04-09)
+
+- **Breaking:** Module no longer creates the S3 bucket — pass `s3_bucket_arn` instead (bucket must have versioning enabled)
+- Native `aws_s3files_file_system` and `aws_s3files_mount_target` resources (requires AWS provider >= 6.40)
+- Removed `local` provider dependency and temp file artifacts
+- NLB target group source IP stickiness for horizontal scaling
+- EFS mounted at `/etc/ssh/host-keys/` with entrypoint wrapper for key persistence
+- Removed `jq` as a prerequisite
+
 ## 0.1.0 (2026-04-08)
 
 Initial release.
