@@ -77,6 +77,7 @@ sftp -P 22 myuser@<sftp_endpoint>
 | `logs_retention_in_days` | CloudWatch log retention | `number` | `7` | no |
 | `route53_zone_id` | Route53 zone ID for DNS record | `string` | `""` | no |
 | `sftp_dns_name` | DNS name for the SFTP endpoint | `string` | `""` | no |
+| `allowed_cidr_blocks` | CIDR blocks allowed to connect to the SFTP endpoint | `list(string)` | `["0.0.0.0/0"]` | no |
 
 ## Outputs
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0 (2026-04-09)
+
+- Add `allowed_cidr_blocks` variable to restrict NLB ingress (defaults to `0.0.0.0/0`)
+
 ## 0.2.0 (2026-04-09)
 
 - **Breaking:** Module no longer creates the S3 bucket — pass `s3_bucket_arn` instead (bucket must have versioning enabled)
