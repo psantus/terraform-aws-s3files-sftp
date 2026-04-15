@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.0 (2026-04-16)
+
+- GitHub Actions CI: `terraform fmt`, `init`, and `validate` on PRs and pushes
+
 ## 0.6.0 (2026-04-16)
 
 - Optional CloudWatch alarms for unhealthy NLB targets and ECS task failures (set `alarm_sns_topic_arn` to enable)

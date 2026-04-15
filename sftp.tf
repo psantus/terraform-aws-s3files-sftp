@@ -32,24 +32,24 @@ resource "aws_iam_role_policy" "s3files" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid      = "S3BucketPermissions"
-        Effect   = "Allow"
-        Action   = ["s3:ListBucket", "s3:ListBucketVersions"]
-        Resource = var.s3_bucket_arn
+        Sid       = "S3BucketPermissions"
+        Effect    = "Allow"
+        Action    = ["s3:ListBucket", "s3:ListBucketVersions"]
+        Resource  = var.s3_bucket_arn
         Condition = { StringEquals = { "aws:ResourceAccount" = data.aws_caller_identity.current.account_id } }
       },
       {
-        Sid      = "S3ObjectPermissions"
-        Effect   = "Allow"
-        Action   = ["s3:AbortMultipartUpload", "s3:DeleteObject*", "s3:GetObject*", "s3:List*", "s3:PutObject*"]
-        Resource = "${var.s3_bucket_arn}/*"
+        Sid       = "S3ObjectPermissions"
+        Effect    = "Allow"
+        Action    = ["s3:AbortMultipartUpload", "s3:DeleteObject*", "s3:GetObject*", "s3:List*", "s3:PutObject*"]
+        Resource  = "${var.s3_bucket_arn}/*"
         Condition = { StringEquals = { "aws:ResourceAccount" = data.aws_caller_identity.current.account_id } }
       },
       {
-        Sid      = "EventBridgeManage"
-        Effect   = "Allow"
-        Action   = ["events:DeleteRule", "events:DisableRule", "events:EnableRule", "events:PutRule", "events:PutTargets", "events:RemoveTargets"]
-        Resource = ["arn:aws:events:*:*:rule/DO-NOT-DELETE-S3-Files*"]
+        Sid       = "EventBridgeManage"
+        Effect    = "Allow"
+        Action    = ["events:DeleteRule", "events:DisableRule", "events:EnableRule", "events:PutRule", "events:PutTargets", "events:RemoveTargets"]
+        Resource  = ["arn:aws:events:*:*:rule/DO-NOT-DELETE-S3-Files*"]
         Condition = { StringEquals = { "events:ManagedBy" = "elasticfilesystem.amazonaws.com" } }
       },
       {
@@ -325,12 +325,12 @@ resource "aws_ecs_task_definition" "sftp" {
 
   container_definitions = jsonencode([
     {
-      name              = "sftp"
-      image             = "atmoz/sftp"
-      cpu               = 256
-      memoryReservation = 512
-      essential         = true
-      user              = "0"
+      name                   = "sftp"
+      image                  = "atmoz/sftp"
+      cpu                    = 256
+      memoryReservation      = 512
+      essential              = true
+      user                   = "0"
       readonlyRootFilesystem = false
 
       entryPoint = ["sh", "-c"]
@@ -354,7 +354,7 @@ resource "aws_ecs_task_definition" "sftp" {
         }
       }
 
-      restartPolicy = { enabled = true, ignoredExitCodes = [], restartAttemptPeriod = 60 }
+      restartPolicy   = { enabled = true, ignoredExitCodes = [], restartAttemptPeriod = 60 }
       linuxParameters = { initProcessEnabled = true }
     }
   ])
