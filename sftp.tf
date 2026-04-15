@@ -435,6 +435,49 @@ resource "aws_appautoscaling_policy" "sftp_memory" {
   }
 }
 
+# ─── CloudWatch Alarms (optional) ───────────────────────────────────────────
+
+resource "aws_cloudwatch_metric_alarm" "unhealthy_hosts" {
+  count               = var.alarm_sns_topic_arn != "" ? 1 : 0
+  alarm_name          = "${var.project_name}-sftp-unhealthy-hosts"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "UnHealthyHostCount"
+  namespace           = "AWS/NetworkELB"
+  period              = 60
+  statistic           = "Maximum"
+  threshold           = 0
+  alarm_description   = "SFTP: unhealthy targets behind NLB"
+  alarm_actions       = [var.alarm_sns_topic_arn]
+  ok_actions          = [var.alarm_sns_topic_arn]
+
+  dimensions = {
+    TargetGroup  = aws_lb_target_group.sftp.arn_suffix
+    LoadBalancer = aws_lb.sftp.arn_suffix
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "task_failures" {
+  count               = var.alarm_sns_topic_arn != "" ? 1 : 0
+  alarm_name          = "${var.project_name}-sftp-task-failures"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ServiceTaskFailures"
+  namespace           = "ECS/ContainerInsights"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 0
+  alarm_description   = "SFTP: ECS task failures detected"
+  alarm_actions       = [var.alarm_sns_topic_arn]
+  ok_actions          = [var.alarm_sns_topic_arn]
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    ClusterName = module.ecs.cluster_name
+    ServiceName = aws_ecs_service.sftp.name
+  }
+}
+
 # ─── DNS (optional) ─────────────────────────────────────────────────────────
 
 resource "aws_route53_record" "sftp" {

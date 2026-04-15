@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.0 (2026-04-16)
+
+- Optional CloudWatch alarms for unhealthy NLB targets and ECS task failures (set `alarm_sns_topic_arn` to enable)
+
 ## 0.5.0 (2026-04-16)
 
 - Auto scaling policies (CPU and memory target tracking) with `min_capacity` / `max_capacity` variables

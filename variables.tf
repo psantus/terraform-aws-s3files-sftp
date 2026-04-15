@@ -74,6 +74,12 @@ variable "max_capacity" {
   default     = 4
 }
 
+variable "alarm_sns_topic_arn" {
+  description = "SNS topic ARN for CloudWatch alarm notifications (optional)"
+  type        = string
+  default     = ""
+}
+
 variable "desired_count" {
   description = "Number of SFTP tasks to run"
   type        = number
