@@ -18,7 +18,7 @@ flowchart LR
 
 ## Prerequisites
 
-- **Terraform >= 1.5** with **AWS provider >= 6.41**.
+- **Terraform >= 1.11** with **AWS provider >= 6.41**.
 - An **S3 bucket with versioning enabled** (you create it, the module takes its ARN).
 - A VPC with public and private subnets.
 
