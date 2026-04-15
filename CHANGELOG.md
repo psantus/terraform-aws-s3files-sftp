@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.0 (2026-04-15)
+
+- **Fully native Terraform** — no more AWS CLI dependency
+- Native `aws_ecs_task_definition` with `s3files_volume_configuration` (requires AWS provider >= 6.41)
+- Removed `terraform_data` provisioners, `local` provider, and temp file artifacts
+
 ## 0.3.0 (2026-04-09)
 
 - Add `allowed_cidr_blocks` variable to restrict NLB ingress (defaults to `0.0.0.0/0`)

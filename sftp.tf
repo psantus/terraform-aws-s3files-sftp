@@ -292,121 +292,71 @@ resource "aws_cloudwatch_log_group" "sftp" {
   retention_in_days = var.logs_retention_in_days
 }
 
-resource "terraform_data" "ecs_task_definition" {
-  input = {
-    family    = local.task_family
-    region    = var.aws_region
-    fs_arn    = aws_s3files_file_system.sftp.arn
-    efs_id    = aws_efs_file_system.ssh_host_keys.id
-    exec_role = aws_iam_role.task_execution_role.arn
-    task_role = aws_iam_role.task_role.arn
-    log_group = aws_cloudwatch_log_group.sftp.name
-    ssm_arn   = aws_ssm_parameter.sftp_users.arn
+resource "aws_ecs_task_definition" "sftp" {
+  family                   = local.task_family
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = "256"
+  memory                   = "512"
+  execution_role_arn       = aws_iam_role.task_execution_role.arn
+  task_role_arn            = aws_iam_role.task_role.arn
+
+  runtime_platform {
+    cpu_architecture        = "X86_64"
+    operating_system_family = "LINUX"
   }
 
-  provisioner "local-exec" {
-    command = <<-EOT
-      set -e
-      cat > /tmp/taskdef_${self.input.family}.json <<'TASKDEF'
-      {
-        "family": "${self.input.family}",
-        "networkMode": "awsvpc",
-        "requiresCompatibilities": ["FARGATE"],
-        "cpu": "256",
-        "memory": "512",
-        "executionRoleArn": "${self.input.exec_role}",
-        "taskRoleArn": "${self.input.task_role}",
-        "runtimePlatform": {
-          "cpuArchitecture": "X86_64",
-          "operatingSystemFamily": "LINUX"
-        },
-        "volumes": [
-          {
-            "name": "sftp-home",
-            "configuredAtLaunch": false,
-            "s3filesVolumeConfiguration": {
-              "fileSystemArn": "${self.input.fs_arn}",
-              "rootDirectory": "/"
-            }
-          },
-          {
-            "name": "ssh-host-keys",
-            "efsVolumeConfiguration": {
-              "fileSystemId": "${self.input.efs_id}",
-              "transitEncryption": "ENABLED"
-            }
-          }
-        ],
-        "containerDefinitions": [
-          {
-            "name": "sftp",
-            "image": "atmoz/sftp",
-            "cpu": 256,
-            "memoryReservation": 512,
-            "essential": true,
-            "user": "0",
-            "readonlyRootFilesystem": false,
-            "portMappings": [
-              { "name": "sftp", "containerPort": 22, "hostPort": 22, "protocol": "tcp" }
-            ],
-            "mountPoints": [
-              { "sourceVolume": "sftp-home", "containerPath": "/home", "readOnly": false },
-              { "sourceVolume": "ssh-host-keys", "containerPath": "/etc/ssh/host-keys", "readOnly": false }
-            ],
-            "entryPoint": ["sh", "-c"],
-            "command": ["cp -n /etc/ssh/host-keys/ssh_host_*_key* /etc/ssh/ 2>/dev/null; /entrypoint sh -c 'cp -f /etc/ssh/ssh_host_*_key* /etc/ssh/host-keys/ 2>/dev/null; exec /usr/sbin/sshd -D -e'"],
-            "secrets": [
-              { "name": "SFTP_USERS", "valueFrom": "${self.input.ssm_arn}" }
-            ],
-            "logConfiguration": {
-              "logDriver": "awslogs",
-              "options": {
-                "awslogs-group": "${self.input.log_group}",
-                "awslogs-region": "${self.input.region}",
-                "awslogs-stream-prefix": "ecs"
-              }
-            },
-            "restartPolicy": {
-              "enabled": true,
-              "ignoredExitCodes": [],
-              "restartAttemptPeriod": 60
-            },
-            "linuxParameters": { "initProcessEnabled": true }
-          }
-        ]
+  volume {
+    name = "sftp-home"
+    s3files_volume_configuration {
+      file_system_arn = aws_s3files_file_system.sftp.arn
+      root_directory  = "/"
+    }
+  }
+
+  volume {
+    name = "ssh-host-keys"
+    efs_volume_configuration {
+      file_system_id     = aws_efs_file_system.ssh_host_keys.id
+      transit_encryption = "ENABLED"
+    }
+  }
+
+  container_definitions = jsonencode([
+    {
+      name              = "sftp"
+      image             = "atmoz/sftp"
+      cpu               = 256
+      memoryReservation = 512
+      essential         = true
+      user              = "0"
+      readonlyRootFilesystem = false
+
+      entryPoint = ["sh", "-c"]
+      command    = ["cp -n /etc/ssh/host-keys/ssh_host_*_key* /etc/ssh/ 2>/dev/null; /entrypoint sh -c 'cp -f /etc/ssh/ssh_host_*_key* /etc/ssh/host-keys/ 2>/dev/null; exec /usr/sbin/sshd -D -e'"]
+
+      portMappings = [{ name = "sftp", containerPort = 22, hostPort = 22, protocol = "tcp" }]
+
+      mountPoints = [
+        { sourceVolume = "sftp-home", containerPath = "/home", readOnly = false },
+        { sourceVolume = "ssh-host-keys", containerPath = "/etc/ssh/host-keys", readOnly = false },
+      ]
+
+      secrets = [{ name = "SFTP_USERS", valueFrom = aws_ssm_parameter.sftp_users.arn }]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.sftp.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "ecs"
+        }
       }
-TASKDEF
 
-      aws ecs register-task-definition \
-        --cli-input-json file:///tmp/taskdef_${self.input.family}.json \
-        --region "${self.input.region}" > /dev/null
-
-      rm -f /tmp/taskdef_${self.input.family}.json
-    EOT
-  }
-
-  provisioner "local-exec" {
-    when    = destroy
-    command = <<-EOT
-      LATEST=$(aws ecs describe-task-definition --task-definition "${self.input.family}" \
-        --region "${self.input.region}" --query 'taskDefinition.taskDefinitionArn' --output text 2>/dev/null || true)
-      [ -z "$LATEST" ] && exit 0
-      aws ecs deregister-task-definition --task-definition "$LATEST" \
-        --region "${self.input.region}" > /dev/null 2>&1 || true
-    EOT
-  }
-
-  depends_on = [
-    aws_s3files_mount_target.sftp,
-    aws_efs_mount_target.ssh_host_keys,
-    aws_cloudwatch_log_group.sftp,
-  ]
-}
-
-# Look up the latest task definition revision (no temp files needed)
-data "aws_ecs_task_definition" "sftp" {
-  task_definition = local.task_family
-  depends_on      = [terraform_data.ecs_task_definition]
+      restartPolicy = { enabled = true, ignoredExitCodes = [], restartAttemptPeriod = 60 }
+      linuxParameters = { initProcessEnabled = true }
+    }
+  ])
 }
 
 # ─── ECS Service ────────────────────────────────────────────────────────────
@@ -414,7 +364,7 @@ data "aws_ecs_task_definition" "sftp" {
 resource "aws_ecs_service" "sftp" {
   name            = "${var.project_name}-${var.env}-sftp"
   cluster         = module.ecs.cluster_arn
-  task_definition = data.aws_ecs_task_definition.sftp.arn
+  task_definition = aws_ecs_task_definition.sftp.arn
   desired_count   = 1
   launch_type     = "FARGATE"
 
@@ -431,12 +381,6 @@ resource "aws_ecs_service" "sftp" {
     target_group_arn = aws_lb_target_group.sftp.arn
     container_name   = "sftp"
     container_port   = 22
-  }
-
-  depends_on = [terraform_data.ecs_task_definition]
-
-  lifecycle {
-    ignore_changes = [task_definition]
   }
 }
 
