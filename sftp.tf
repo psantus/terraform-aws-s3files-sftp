@@ -383,6 +383,56 @@ resource "aws_ecs_service" "sftp" {
     container_name   = "sftp"
     container_port   = 22
   }
+
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
+}
+
+# ─── Auto Scaling ───────────────────────────────────────────────────────────
+
+resource "aws_appautoscaling_target" "sftp" {
+  max_capacity       = var.max_capacity
+  min_capacity       = var.min_capacity
+  resource_id        = "service/${module.ecs.cluster_name}/${aws_ecs_service.sftp.name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+resource "aws_appautoscaling_policy" "sftp_cpu" {
+  name               = "${var.project_name}-sftp-cpu"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.sftp.resource_id
+  scalable_dimension = aws_appautoscaling_target.sftp.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.sftp.service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    target_value       = 70
+    scale_in_cooldown  = 300
+    scale_out_cooldown = 60
+
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageCPUUtilization"
+    }
+  }
+}
+
+resource "aws_appautoscaling_policy" "sftp_memory" {
+  name               = "${var.project_name}-sftp-memory"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.sftp.resource_id
+  scalable_dimension = aws_appautoscaling_target.sftp.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.sftp.service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    target_value       = 70
+    scale_in_cooldown  = 300
+    scale_out_cooldown = 60
+
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageMemoryUtilization"
+    }
+  }
 }
 
 # ─── DNS (optional) ─────────────────────────────────────────────────────────

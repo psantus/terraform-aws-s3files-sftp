@@ -61,3 +61,21 @@ variable "allowed_cidr_blocks" {
   type        = list(string)
   default     = ["0.0.0.0/0"]
 }
+
+variable "min_capacity" {
+  description = "Minimum number of SFTP tasks"
+  type        = number
+  default     = 1
+}
+
+variable "max_capacity" {
+  description = "Maximum number of SFTP tasks"
+  type        = number
+  default     = 4
+}
+
+variable "desired_count" {
+  description = "Number of SFTP tasks to run"
+  type        = number
+  default     = 1
+}

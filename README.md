@@ -89,6 +89,8 @@ Users with an empty password in `sftp_users` (e.g. `myuser::1000:1000:upload`) c
 | `route53_zone_id` | Route53 zone ID for DNS record | `string` | `""` | no |
 | `sftp_dns_name` | DNS name for the SFTP endpoint | `string` | `""` | no |
 | `allowed_cidr_blocks` | CIDR blocks allowed to connect to the SFTP endpoint | `list(string)` | `["0.0.0.0/0"]` | no |
+| `min_capacity` | Minimum number of SFTP tasks | `number` | `1` | no |
+| `max_capacity` | Maximum number of SFTP tasks | `number` | `4` | no |
 
 ## Outputs
 

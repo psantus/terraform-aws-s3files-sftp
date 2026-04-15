@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.0 (2026-04-16)
+
+- Auto scaling policies (CPU and memory target tracking) with `min_capacity` / `max_capacity` variables
+- `desired_count` ignored in lifecycle to let the autoscaler manage it
+
 ## 0.4.0 (2026-04-15)
 
 - **Fully native Terraform** — no more AWS CLI dependency
