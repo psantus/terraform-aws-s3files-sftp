@@ -35,6 +35,16 @@ output "sftp_endpoint" {
   value = module.sftp.sftp_endpoint
 }
 
+# Optional: upload an SSH public key for key-based auth
+# Users with empty password in sftp_users (e.g. "keyuser::1002:1000:upload")
+# can only authenticate via SSH key.
+#
+# resource "aws_s3_object" "user_ssh_key" {
+#   bucket  = aws_s3_bucket.sftp.id
+#   key     = "keyuser/.ssh/keys/id_rsa.pub"
+#   content = file("~/.ssh/id_rsa.pub")
+# }
+
 output "sftp_bucket_name" {
   value = aws_s3_bucket.sftp.id
 }

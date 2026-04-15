@@ -59,6 +59,20 @@ Then connect:
 sftp -P 22 myuser@<sftp_endpoint>
 ```
 
+## SSH key authentication
+
+atmoz/sftp supports SSH key auth. Upload public keys to the S3 bucket at `<user>/.ssh/keys/`:
+
+```hcl
+resource "aws_s3_object" "user_ssh_key" {
+  bucket  = aws_s3_bucket.sftp.id
+  key     = "myuser/.ssh/keys/id_rsa.pub"
+  content = file("~/.ssh/id_rsa.pub")
+}
+```
+
+Users with an empty password in `sftp_users` (e.g. `myuser::1000:1000:upload`) can only authenticate via SSH key. You can mix password and key-based users in the same spec.
+
 ## Inputs
 
 | Name | Description | Type | Default | Required |
