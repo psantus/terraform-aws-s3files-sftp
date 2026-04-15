@@ -226,9 +226,10 @@ resource "aws_iam_role_policy" "task_role_s3files" {
 # ─── SSM parameter for SFTP users ───────────────────────────────────────────
 
 resource "aws_ssm_parameter" "sftp_users" {
-  name  = "/${var.project_name}/${var.env}/SFTP_USERS"
-  type  = "SecureString"
-  value = var.sftp_users
+  name             = "/${var.project_name}/${var.env}/SFTP_USERS"
+  type             = "SecureString"
+  value_wo         = var.sftp_users
+  value_wo_version = var.sftp_users_version
 }
 
 # ─── ECS Cluster ────────────────────────────────────────────────────────────

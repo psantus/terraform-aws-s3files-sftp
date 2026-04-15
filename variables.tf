@@ -35,6 +35,12 @@ variable "sftp_users" {
   default     = "demo:demo:1000:1000:upload"
 }
 
+variable "sftp_users_version" {
+  description = "Bump to trigger an SSM parameter update when sftp_users changes"
+  type        = number
+  default     = 1
+}
+
 variable "logs_retention_in_days" {
   type    = number
   default = 7
